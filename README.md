@@ -36,4 +36,14 @@ This project generates romantic messages based on special moments. Share sweet m
 
 ```bash
 python app.py
+```
 
+Visit http://localhost:5000/ in your browser.
+
+### Usage
+Enter your girlfriend's name and special moments.
+Click "Generate Message" to see a romantic message.
+Explore the message history.
+
+### License
+This project is licensed under the MIT License.
