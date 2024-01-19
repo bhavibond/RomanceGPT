@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Romantic Message Generator</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+
+        .container {
+            margin-top: 50px;
+        }
+
+        #message-container {
+            margin-top: 20px;
+        }
+
+        #loading-spinner {
+            display: none;
+        }
+
+        #notification-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        .message-card {
+            background-color: #ffffff;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        .message-card .card-body {
+            padding: 20px;
+        }
+
+        .generate-form {
+            background-color: #ffffff;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-generate {
+            background-color: #6c757d;
+            border-color: #6c757d;
+        }
+
+        .btn-generate:hover {
+            background-color: #495057;
+            border-color: #495057;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row">
+            <div class="col-md-8 mx-auto">
+                <h2 class="text-center mb-4">Romantic Message Generator</h2>
+                <div class="generate-form">
+                    <form id="generateForm">
+                        <div class="form-group">
+                            <label for="girlfriend_name">Your Girlfriend's Name:</label>
+                            <input type="text" class="form-control" id="girlfriend_name" name="girlfriend_name" required>
+                            <small class="form-text text-muted">We'll use this to create a personalized message.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="special_moments">Special Moments:</label>
+                            <textarea class="form-control" id="special_moments" name="special_moments" rows="3" required></textarea>
+                            <small class="form-text text-muted">Highlight some special moments.</small>
+                        </div>
+                        <button type="button" class="btn btn-generate btn-block" onclick="generateMessage()">Generate Message</button>
+                        <div id="loading-spinner" class="mt-3">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="sr-only">Loading...</span>
+                            </div>
+                            <small class="text-muted ml-2">Generating...</small>
+                        </div>
+                    </form>
+                    <div id="notification-container"></div>
+                </div>
+            </div>
+        </div>
+        <div class="row mt-5">
+            <div class="col-md-8 mx-auto">
+                <h3 class="text-center mb-4">Message History</h3>
+                <div id="message-container">
+                    <!-- Message history will be dynamically updated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        function generateMessage() {
+            const girlfriendName = $('#girlfriend_name').val();
+            const specialMoments = $('#special_moments').val();
+
+            // Show loading spinner
+            $('#loading-spinner').show();
+
+            // Send a POST request to generate the message
+            $.ajax({
+                url: '/generate_message',
+                type: 'POST',
+                data: { 'girlfriend_name': girlfriendName, 'special_moments': specialMoments },
+                success: function(response) {
+                    // Update the UI with the generated message and timestamp
+                    updateMessageHistory(response);
+                    // Show success notification
+                    showNotification('Romantic message generated successfully!', 'success');
+                },
+                error: function(error) {
+                    console.error('Error generating message:', error.responseJSON);
+                    // Show error notification
+                    showNotification('Failed to generate a romantic message. Please try again later.', 'danger');
+                },
+                complete: function() {
+                    // Hide loading spinner
+                    $('#loading-spinner').hide();
+                    // Clear form inputs
+                    $('#girlfriend_name, #special_moments').val('');
+                }
+            });
+        }
+
+        // Add a function to show notifications
+        function showNotification(message, type) {
+            const notificationContainer = $('#notification-container');
+            notificationContainer.empty();
+            notificationContainer.append(`<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                ${message}
+                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>`);
+        }
+
+        // Add a function to dynamically update the message history
+        function updateMessageHistory(response) {
+            const messageContainer = $('#message-container');
+
+            // Append the new message to the message history
+            messageContainer.prepend(`<div class="card message-card">
+                <div class="card-body">
+                    <h5 class="card-title">${response.girlfriend_name}</h5>
+                    <p class="card-text">${response.romantic_message}</p>
+                    <small class="text-muted">${response.timestamp}</small>
+                </div>
+            </div>`);
+        }
+
+        // Add a function to periodically update the message history using AJAX
+        function fetchMessageHistory() {
+            // Send a GET request to fetch the message history
+            $.ajax({
+                url: '/get_message_history',
+                type: 'GET',
+                success: function(response) {
+                    // Update the UI with the fetched message history
+                    const messageContainer = $('#message-container');
+                    messageContainer.empty();
+
+                    response.message_history.forEach(message => {
+                        messageContainer.append(`<div class="card message-card">
+                            <div class="card-body">
+                                <h5 class="card-title">${message.girlfriend_name}</h5>
+                                <p class="card-text">${message.message}</p>
+                                <small class="text-muted">${message.timestamp}</small>
+                            </div>
+                        </div>`);
+                    });
+                },
+                error: function(error) {
+                    console.error('Error fetching message history:', error.responseJSON);
+                },
+                complete: function() {
+                    // Schedule the next update after a delay (e.g., every 30 seconds)
+                    setTimeout(fetchMessageHistory, 30000);
+                }
+            });
+        }
+
+        // Initialize the message history update
+        fetchMessageHistory();
+    </script>
+</body>
+</html>
