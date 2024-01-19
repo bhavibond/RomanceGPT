@@ -45,5 +45,7 @@ Enter your girlfriend's name and special moments.
 Click "Generate Message" to see a romantic message.
 Explore the message history.
 
+More additions are work in progress!
+
 ### License
 This project is licensed under the MIT License.
