@@ -29,12 +29,12 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your_default_secret_key
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URI', 'sqlite:///messages.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['RESULTS_PER_PAGE'] = 5  # Number of messages per page
-app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.example.com')
+app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
 app.config['MAIL_PORT'] = os.environ.get('MAIL_PORT', 587)
 app.config['MAIL_USE_TLS'] = os.environ.get('MAIL_USE_TLS', True)
 app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
-app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'noreply@example.com')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'noreply@romancegpt.com')
 app.config['QUOTE_API_URL'] = 'https://quotes.rest/qod?category=love'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
