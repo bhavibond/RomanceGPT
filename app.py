@@ -200,14 +200,14 @@ def logout():
     return redirect(url_for('login'))
 
 # Placeholder for additional routes
-@app.route("/example_route")
-def example_route():
-    return "This is an example route."
+# @app.route("/example_route")
+# def example_route():
+   # return "This is an example route."
 
 @app.route("/settings")
 @login_required
 def user_settings():
-    # Placeholder: Retrieve and display user-specific settings
+    # Retrieve and display user-specific settings
     user_settings = get_user_settings(current_user)
     return render_template("user_settings.html", user_settings=user_settings)
 
@@ -215,7 +215,7 @@ def user_settings():
 def submit_feedback():
     if request.method == "POST":
         feedback = request.form.get("feedback")
-        # Placeholder: Process and store the feedback in the database
+        # Process and store the feedback in the database
         store_feedback(feedback)
         flash("Thank you for your feedback!", "success")
     return redirect(url_for("index"))
@@ -223,9 +223,9 @@ def submit_feedback():
 @app.route("/admin_dashboard")
 @login_required
 def admin_dashboard():
-    # Placeholder: Check if the current user has admin privileges
+    # Check if the current user has admin privileges
     if current_user.is_admin:
-        # Placeholder: Render the admin dashboard
+        # Render the admin dashboard
         return render_template("admin_dashboard.html")
     else:
         flash("Access denied. Admin privileges required.", "danger")
@@ -239,7 +239,7 @@ def page_not_found(e):
 def server_error(e):
     return render_template("500.html"), 500
 
-# Placeholder for a route with file uploads
+# File uploads
 @app.route("/upload_image", methods=["POST"])
 @login_required
 def upload_image():
@@ -257,15 +257,15 @@ def upload_image():
             flash('File uploaded successfully', 'success')
             return redirect(url_for('index'))
 
-# Placeholder for a route displaying uploaded images
+# Displaying uploaded images
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-# Placeholder for a route with data visualization
+# Data visualization
 @app.route("/visualization")
 def data_visualization():
-    # Placeholder: Generate sample data and create a simple plot
+    # Generate sample data and create a simple plot
     x = np.linspace(0, 10, 100)
     y = np.sin(x)
     plt.plot(x, y)
