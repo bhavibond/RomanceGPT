@@ -283,7 +283,7 @@ def data_visualization():
     
     return render_template("data_visualization.html", img_base64=img_base64)
 
-# Placeholder for a route to change the user's password
+# Change the user's password
 @app.route("/change_password", methods=["GET", "POST"])
 @login_required
 def change_password():
