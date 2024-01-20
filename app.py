@@ -1,211 +1,306 @@
-from flask import Flask, render_template, request, jsonify, flash
-from functools import wraps
-from datetime import datetime, timedelta
-from werkzeug.middleware.proxy_fix import ProxyFix
-import openai
-from flask_caching import Cache
+# Import necessary modules
 import os
+import random
+import nltk
+import logging
+import requests
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_from_directory
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from flask_paginate import Pagination, get_page_parameter
+from flask_wtf import FlaskForm
+from wtforms import StringField, PasswordField, SubmitField
+from wtforms.validators import DataRequired, Length, EqualTo, Email
+from flask_mail import Mail, Message as FlaskMessage
+from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
+import matplotlib.pyplot as plt
+import numpy as np
+from io import BytesIO
+import base64
+
+# Download NLTK data (if not already downloaded)
+nltk.download('punkt')
 
 app = Flask(__name__)
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
-app.config.from_object(__name__)
-cache = Cache(app, config={'CACHE_TYPE': 'simple'})
-app.secret_key = 'your_secret_key'  # Replace with a secure secret key
 
-# Load sensitive information from environment variables
-openai.api_key = os.environ.get('OPENAI_API_KEY')
+# App Configuration
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your_default_secret_key')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URI', 'sqlite:///messages.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['RESULTS_PER_PAGE'] = 5  # Number of messages per page
+app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.example.com')
+app.config['MAIL_PORT'] = os.environ.get('MAIL_PORT', 587)
+app.config['MAIL_USE_TLS'] = os.environ.get('MAIL_USE_TLS', True)
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'noreply@example.com')
+app.config['QUOTE_API_URL'] = 'https://quotes.rest/qod?category=love'
+app.config['UPLOAD_FOLDER'] = 'uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
-# Rate Limiting
-REQUESTS_PER_MINUTE = 5
-MINUTE = 60
+# Configure Flask-Login
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
 
-# Dictionary to store request timestamps for rate limiting
-request_timestamps = {}
+# Configure Flask-WTF
+app.config['WTF_CSRF_ENABLED'] = True
 
+# Configure Flask-Mail
+mail = Mail(app)
 
-class ValidationError(Exception):
-    def __init__(self, details):
-        self.details = details
+# Set up logging
+logging.basicConfig(filename='app.log', level=logging.INFO)
 
+# Define User model for the database
+db = SQLAlchemy(app)
 
-class OpenAIError(Exception):
-    def __init__(self, message, response=None):
-        super().__init__(message)
-        self.response = response
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(50), unique=True, nullable=False)
+    password = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    messages = db.relationship('Message', backref='user', lazy=True)
+    is_admin = db.Column(db.Boolean, default=False)
 
+class Message(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    girlfriend_name = db.Column(db.String(100), nullable=False)
+    romantic_message = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
-class UnexpectedError(Exception):
-    pass
+# Create database tables (run this once to initialize the database)
+db.create_all()
 
-
-def rate_limit(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        client_ip = request.remote_addr
-
-        # Check if the client has exceeded the rate limit
-        exceeded_rate_limit, remaining_time = has_exceeded_rate_limit(client_ip)
-
-        if exceeded_rate_limit:
-            flash('Rate limit exceeded. Please try again later.')
-            return jsonify({"error": "Rate limit exceeded. Please try again later.", "remaining_time": remaining_time}), 429
-
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-def has_exceeded_rate_limit(client_ip):
-    current_time = datetime.now()
-
-    if client_ip not in request_timestamps:
-        request_timestamps[client_ip] = [current_time]
-    else:
-        timestamps = request_timestamps[client_ip]
-
-        # Remove timestamps older than 1 minute
-        request_timestamps[client_ip] = [t for t in timestamps if current_time - t < timedelta(minutes=1)]
-
-        # Check if rate limit is exceeded
-        if len(request_timestamps[client_ip]) >= REQUESTS_PER_MINUTE:
-            remaining_time = (timestamps[-1] + timedelta(minutes=1) - current_time).seconds
-            return True, remaining_time
-
-        request_timestamps[client_ip].append(current_time)
-
-    return False, 0
-
-
-def validate_input(girlfriend_name, special_moments):
-    errors = {}
-
+# Function to generate a more varied romantic message using real-time data from the "They Said So" Quotes API
+def generate_romantic_message(girlfriend_name, special_moments):
     if not girlfriend_name:
-        errors['girlfriendName'] = 'Please enter your girlfriend\'s name.'
+        girlfriend_name = "My Love"  # Use a default if girlfriend_name is not provided
 
-    if not special_moments:
-        errors['specialMoments'] = 'Please enter some special moments.'
-
-    return errors
-
-
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    if request.method == 'POST':
-        return generate_message()
-    # Load the history of generated messages
-    history = load_message_history()
-    return render_template('index.html', history=history)
-
-
-def load_message_history():
-    # Load the message history from cache or create an empty list
-    history = cache.get('message_history') or []
-    return history
-
-
-def save_to_message_history(message):
-    # Save the generated message to the history
-    history = load_message_history()
-    history.append(message)
-    # Keep the history limited to the last 10 messages for simplicity
-    history = history[-10:]
-    cache.set('message_history', history)
-
-
-@app.route('/generate_message', methods=['POST'])
-@rate_limit
-def generate_message():
     try:
-        # Retrieve input from the request
-        girlfriend_name = request.form.get('girlfriend_name')
-        special_moments = request.form.get('special_moments')
-
-        # Validate input
-        errors = validate_input(girlfriend_name, special_moments)
-
-        if errors:
-            raise ValidationError(errors)
-
-        # Check if the message is already in the cache
-        cache_key = f"{girlfriend_name}_{special_moments}"
-        cached_message = cache.get(cache_key)
-
-        if cached_message:
-            flash('Romantic message retrieved from cache!')
-            return jsonify({"romantic_message": cached_message, "from_cache": True})
-        else:
-            app.logger.debug(f"Cache miss: Key - {cache_key}")
-
-        # Create a prompt for OpenAI API
-        prompt = f"Compose a romantic message for {girlfriend_name}. Highlight some special moments, like {special_moments}."
-
-        # Use the OpenAI API to generate a personalized romantic message
-        with timing_context():
-            response = openai.Completion.create(
-                engine="text-davinci-002",
-                prompt=prompt,
-                max_tokens=150
-            )
-
-        # Check the OpenAI API response for errors
-        if 'choices' not in response or not response['choices']:
-            app.logger.error(f"Error in OpenAI API response: {response}")
-            raise OpenAIError("Failed to generate a romantic message. Please try again.", response=response)
-
-        # Extract the generated romantic message
-        romantic_message = response['choices'][0]['text']
-
-        # Store the generated message in the cache for future use
-        cache.set(cache_key, romantic_message)
-
-        # Save the generated message to the message history
-        save_to_message_history({"girlfriend_name": girlfriend_name, "message": romantic_message, "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
-
-        # Log successful generation
-        app.logger.info(f"Generated romantic message for {girlfriend_name}")
-
-        flash('Romantic message generated successfully!')
-        return jsonify({"romantic_message": romantic_message, "from_cache": False})
-    except ValidationError as ve:
-        flash('Validation error. Please check your input.')
-        app.logger.error(f"Validation error: {str(ve.details)}")
-        return jsonify({"error": "Validation error", "details": ve.details}), 400
-    except OpenAIError as oae:
-        flash('Failed to generate a romantic message. Please try again later.')
-        app.logger.error(f"OpenAI API error: {str(oae)}")
-        if oae.response:
-            log_openai_error(oae.response)
-            return jsonify({"error": "Failed to generate a romantic message. Please try again later."}), 500
-        else:
-            return jsonify({"error": "Failed to generate a romantic message. Please try again later."}), 500
+        # Fetch real-time love quote from the "They Said So" Quotes API
+        response = requests.get(app.config['QUOTE_API_URL'])
+        quote_data = response.json()
+        quote = quote_data['contents']['quotes'][0]['quote']
     except Exception as e:
-        flash('An unexpected error occurred. Please try again later.')
-        app.logger.error(f"Unexpected error: {str(e)}")
-        raise UnexpectedError("An unexpected error occurred. Please try again later.") from e
+        logging.error(f"Error fetching quote from API: {str(e)}")
+        quote = "You make every moment special."
 
+    # Construct the romantic message
+    romantic_message = f"{girlfriend_name}, {quote}. Our love grows stronger every day."
 
-def timing_context():
-    start_time = datetime.now()
-    yield
-    end_time = datetime.now()
-    elapsed_time = end_time - start_time
-    app.logger.debug(f"Time taken: {elapsed_time}")
+    # Save the message in the database
+    new_message = Message(user=current_user, girlfriend_name=girlfriend_name, romantic_message=romantic_message)
+    db.session.add(new_message)
+    db.session.commit()
 
+    # Notify user via email (optional)
+    send_notification_email(new_message)
 
-def log_openai_error(response):
-    if 'error' in response:
-        app.logger.error(f"OpenAI API error: {response['error']['message']}")
-        if 'code' in response['error']:
-            app.logger.error(f"Error Code: {response['error']['code']}")
-        if 'details' in response['error']:
-            app.logger.error(f"Error Details: {response['error']['details']}")
+    # Return the generated message and timestamp
+    return {
+        "girlfriend_name": girlfriend_name,
+        "romantic_message": romantic_message,
+        "timestamp": new_message.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+    }
 
+# Flask-WTF Form for user registration
+class RegistrationForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired(), Length(min=4, max=50)])
+    password = PasswordField('Password', validators=[DataRequired(), Length(min=6)])
+    confirm_password = PasswordField('Confirm Password', validators=[DataRequired(), EqualTo('password')])
+    email = StringField('Email', validators=[DataRequired(), Email()])
+    submit = SubmitField('Register')
 
-@app.route('/get_message_history', methods=['GET'])
-def get_message_history():
-    history = load_message_history()
-    return jsonify({"message_history": history})
+# Send notification email to the user
+def send_notification_email(message):
+    try:
+        msg = FlaskMessage("New Romantic Message",
+                           recipients=[current_user.email],
+                           body=f"Dear {current_user.username},\n\n"
+                                f"Your romantic message for {message.girlfriend_name} has been created. "
+                                f"Here is the message:\n\n'{message.romantic_message}'\n\n"
+                                f"Cheers,\nThe Romantic Message App")
+        mail.send(msg)
+    except Exception as e:
+        logging.error(f"Error sending email notification: {str(e)}")
 
+# Routes
+@app.route("/")
+@login_required
+def index():
+    return render_template("index.html", user=current_user)
+
+@app.route("/generate_message", methods=["POST"])
+@login_required
+def ajax_generate_message():
+    data = request.get_json()
+    girlfriend_name = data.get("girlfriend_name", "")
+    special_moments = data.get("special_moments", "")
+
+    # Perform form validation
+    if not girlfriend_name:
+        flash("Please provide your girlfriend's name.", "danger")
+        return jsonify({"error": "Missing girlfriend's name"})
+
+    # Generate a romantic message
+    generated_message = generate_romantic_message(girlfriend_name, special_moments)
+
+    return jsonify(generated_message)
+
+@app.route("/get_message_history", methods=["GET"])
+@login_required
+def ajax_get_message_history():
+    page = request.args.get(get_page_parameter(), type=int, default=1)
+    messages = current_user.messages.order_by(Message.timestamp.desc()).paginate(page, app.config['RESULTS_PER_PAGE'], False)
+    formatted_history = [
+        {
+            "girlfriend_name": message.girlfriend_name,
+            "romantic_message": message.romantic_message,
+            "timestamp": message.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        for message in messages.items
+    ]
+    pagination = Pagination(page=page, total=messages.total, per_page=app.config['RESULTS_PER_PAGE'], css_framework='bootstrap4')
+
+    return render_template("message_history.html", message_history=formatted_history, pagination=pagination)
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    form = RegistrationForm()
+    if form.validate_on_submit():
+        hashed_password = generate_password_hash(form.password.data, method='sha256')
+        user = User(username=form.username.data, password=hashed_password, email=form.email.data)
+        db.session.add(user)
+        db.session.commit()
+        flash('Your account has been created! You can now log in.', 'success')
+        return redirect(url_for('login'))
+    return render_template("register.html", form=form)
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        user = User.query.filter_by(username=username).first()
+        if user and check_password_hash(user.password, password):
+            login_user(user, remember=True)
+            flash('Login successful!', 'success')
+            return redirect(url_for('index'))
+        else:
+            flash('Invalid username or password. Please try again.', 'danger')
+    return render_template("login.html")
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('login'))
+
+# Placeholder for additional routes
+@app.route("/example_route")
+def example_route():
+    return "This is an example route."
+
+@app.route("/settings")
+@login_required
+def user_settings():
+    # Placeholder: Retrieve and display user-specific settings
+    user_settings = get_user_settings(current_user)
+    return render_template("user_settings.html", user_settings=user_settings)
+
+@app.route("/submit_feedback", methods=["POST"])
+def submit_feedback():
+    if request.method == "POST":
+        feedback = request.form.get("feedback")
+        # Placeholder: Process and store the feedback in the database
+        store_feedback(feedback)
+        flash("Thank you for your feedback!", "success")
+    return redirect(url_for("index"))
+
+@app.route("/admin_dashboard")
+@login_required
+def admin_dashboard():
+    # Placeholder: Check if the current user has admin privileges
+    if current_user.is_admin:
+        # Placeholder: Render the admin dashboard
+        return render_template("admin_dashboard.html")
+    else:
+        flash("Access denied. Admin privileges required.", "danger")
+        return redirect(url_for("index"))
+
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template("404.html"), 404
+
+@app.errorhandler(500)
+def server_error(e):
+    return render_template("500.html"), 500
+
+# Placeholder for a route with file uploads
+@app.route("/upload_image", methods=["POST"])
+@login_required
+def upload_image():
+    if request.method == "POST":
+        if 'file' not in request.files:
+            flash('No file part', 'danger')
+            return redirect(request.url)
+        file = request.files['file']
+        if file.filename == '':
+            flash('No selected file', 'danger')
+            return redirect(request.url)
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            flash('File uploaded successfully', 'success')
+            return redirect(url_for('index'))
+
+# Placeholder for a route displaying uploaded images
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+# Placeholder for a route with data visualization
+@app.route("/visualization")
+def data_visualization():
+    # Placeholder: Generate sample data and create a simple plot
+    x = np.linspace(0, 10, 100)
+    y = np.sin(x)
+    plt.plot(x, y)
+    plt.xlabel("X-axis")
+    plt.ylabel("Y-axis")
+    plt.title("Sample Data Visualization")
+    
+    # Save the plot to a BytesIO object
+    img_bytes = BytesIO()
+    plt.savefig(img_bytes, format='png')
+    img_bytes.seek(0)
+    
+    # Encode the image to base64 for embedding in HTML
+    img_base64 = base64.b64encode(img_bytes.read()).decode('utf-8')
+    
+    return render_template("data_visualization.html", img_base64=img_base64)
+
+# Placeholder for a route to change the user's password
+@app.route("/change_password", methods=["GET", "POST"])
+@login_required
+def change_password():
+    if request.method == "POST":
+        # Placeholder: Implement password change logic
+        new_password = request.form.get("new_password")
+        confirm_password = request.form.get("confirm_password")
+        if new_password == confirm_password:
+            # Placeholder: Update the user's password in the database
+            current_user.password = generate_password_hash(new_password, method='sha256')
+            db.session.commit()
+            flash("Password changed successfully", "success")
+        else:
+            flash("Password and confirmation do not match", "danger")
+    return render_template("change_password.html")
+
+# ... (Other potential enhancements soon)
 
 if __name__ == "__main__":
     app.run(debug=True)
