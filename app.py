@@ -300,6 +300,48 @@ def change_password():
             flash("Password and confirmation do not match", "danger")
     return render_template("change_password.html")
 
+# Displaying upcoming special occasions
+@app.route("/special_occasions")
+@login_required
+def special_occasions():
+    # Retrieve and display upcoming special occasions
+    upcoming_occasions = get_upcoming_occasions()
+    return render_template("special_occasions.html", upcoming_occasions=upcoming_occasions)
+
+# Get upcoming special occasions
+def get_upcoming_occasions():
+    # Implement logic to fetch upcoming occasions from a database or external API
+    upcoming_occasions = [
+        {"name": "Anniversary", "date": "2024-05-15"},
+        {"name": "Birthday", "date": "2024-07-22"},
+        # Add more occasions as needed
+    ]
+    return upcoming_occasions
+
+# Display recommended gifts
+@app.route("/recommended_gifts")
+@login_required
+def recommended_gifts():
+    # Retrieve and display recommended gifts based on user preferences
+    user_preferences = get_user_preferences(current_user)
+    recommended_gifts = get_recommendations(user_preferences)
+    return render_template("recommended_gifts.html", recommended_gifts=recommended_gifts)
+
+# Get user preferences
+def get_user_preferences(user):
+    # Implement logic to fetch user preferences from the database
+    # For example, preferred gift categories, favorite colors, etc.
+    return {"favorite_category": "Jewelry", "favorite_color": "Blue"}
+
+# Get gift recommendations
+def get_recommendations(user_preferences):
+    # Implement logic to generate gift recommendations based on preferences
+    # For example, recommend jewelry if it's their favorite category
+    if user_preferences.get("favorite_category") == "Jewelry":
+        return ["Necklace", "Bracelet", "Earrings"]
+    else:
+        return ["Customized Photo Frame", "Handwritten Love Letter", "Experience Day"]
+            
 # ... (Other potential enhancements soon)
 
 if __name__ == "__main__":
