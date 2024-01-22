@@ -341,7 +341,53 @@ def get_recommendations(user_preferences):
         return ["Necklace", "Bracelet", "Earrings"]
     else:
         return ["Customized Photo Frame", "Handwritten Love Letter", "Experience Day"]
-            
+
+# Displaying user statistics
+@app.route("/user_statistics")
+@login_required
+def user_statistics():
+    # Retrieve and display statistics on user's message generation activity
+    message_stats = get_message_statistics(current_user)
+    return render_template("user_statistics.html", message_stats=message_stats)
+
+# Get user message generation statistics
+def get_message_statistics(user):
+    # Implement logic to fetch and calculate user-specific message statistics
+    total_messages = user.messages.count()
+    # Count messages created in the last 7 days
+    messages_last_7_days = user.messages.filter(Message.timestamp >= (datetime.utcnow() - timedelta(days=7))).count()
+
+    return {
+        "total_messages": total_messages,
+        "messages_last_7_days": messages_last_7_days,
+    }
+
+# Placeholder for a route to share messages on social media
+@app.route("/share_on_social_media/<int:message_id>")
+@login_required
+def share_on_social_media(message_id):
+    # Placeholder: Retrieve the message by ID and integrate with social media sharing API
+    message = Message.query.get_or_404(message_id)
+    share_status = share_message_on_social_media(message)
+    
+    if share_status:
+        flash("Message shared on social media successfully!", "success")
+    else:
+        flash("Failed to share message on social media. Please try again later.", "danger")
+
+    return redirect(url_for("index"))
+
+# Placeholder function to share a message on social media
+def share_message_on_social_media(message):
+    # Placeholder: Integrate with a social media sharing API (e.g., Twitter, Facebook)
+    try:
+        # Example: Use requests library to post the message to a hypothetical social media API
+        response = requests.post("https://api.example.com/share", data={"message": message.romantic_message})
+        return response.status_code == 200
+    except Exception as e:
+        logging.error(f"Error sharing message on social media: {str(e)}")
+        return False
+
 # ... (Other potential enhancements soon)
 
 if __name__ == "__main__":
